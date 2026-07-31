@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(npm install *)",
+      "PowerShell(npm ls *)",
+      "PowerShell(npm run *)",
+      "Bash(npm run *)",
+      "PowerShell(npx tsx _tmp-participante.ts 2>&1 | Select-Object -Last 10)",
+      "PowerShell(npx tsx _tmp-auth-check.ts 2>&1 | Select-Object -Last 40)",
+      "Bash(node *)",
+      "PowerShell(node _tmp-secret.mjs)",
+      "PowerShell(docker exec canvas-bmc-db *)",
+      "Bash(npx drizzle-kit *)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(curl -s -o /tmp/lan.html -w \"status=%{http_code}\\\\n\" http://10.182.1.193:3000/login)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -D - -o /tmp/lan.css -w \"\\\\nsize=%{size_download} type=%{content_type}\\\\n\" http://10.182.1.193:3000/_next/static/css/app/layout.css)",
+      "Bash(curl -s -o /tmp/lo.css -w \"size=%{size_download}\\\\n\" http://localhost:3000/_next/static/css/app/layout.css)"
+    ]
+  }
+}
