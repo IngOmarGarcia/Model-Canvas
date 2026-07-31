@@ -2,7 +2,8 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { signOut } from 'next-auth/react';
+import Link from 'next/link';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -15,8 +16,8 @@ import { changePasswordSchema, type ChangePasswordInput } from '@/lib/validation
 import { changePasswordAction } from '@/server/actions/auth.actions';
 
 export function ChangePasswordForm({ forced }: { forced: boolean }) {
-  const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState(false);
 
   const {
     register,
@@ -42,9 +43,12 @@ export function ChangePasswordForm({ forced }: { forced: boolean }) {
       return;
     }
 
-    toast.success('Contraseña actualizada');
-    router.push('/');
-    router.refresh();
+    // La contraseña ya cambió: el JWT en la cookie quedó obsoleto (sigue
+    // diciendo mustChangePassword). En vez de parchearlo se destruye la sesión
+    // y se obliga a entrar de nuevo con la credencial nueva.
+    toast.success('Contraseña actualizada. Inicia sesión con tu nueva contraseña.');
+    setLeaving(true);
+    await signOut({ redirectTo: '/login' });
   }
 
   return (
@@ -105,10 +109,31 @@ export function ChangePasswordForm({ forced }: { forced: boolean }) {
         )}
       </div>
 
-      <Button type="submit" className="w-full" disabled={isSubmitting}>
-        {isSubmitting && <Loader2 className="size-4 animate-spin" />}
-        {isSubmitting ? 'Guardando…' : 'Guardar contraseña'}
+      <Button type="submit" className="w-full" disabled={isSubmitting || leaving}>
+        {(isSubmitting || leaving) && <Loader2 className="size-4 animate-spin" />}
+        {isSubmitting ? 'Guardando…' : leaving ? 'Redirigiendo…' : 'Guardar contraseña'}
       </Button>
+
+      {/* Salida siempre disponible: con contraseña temporal el middleware fija
+          al usuario en esta pantalla, así que sin esto no habría forma de salir. */}
+      {forced ? (
+        <Button
+          type="button"
+          variant="ghost"
+          className="w-full"
+          disabled={isSubmitting || leaving}
+          onClick={() => {
+            setLeaving(true);
+            void signOut({ redirectTo: '/login' });
+          }}
+        >
+          Cerrar sesión
+        </Button>
+      ) : (
+        <Button asChild type="button" variant="ghost" className="w-full">
+          <Link href="/">Cancelar</Link>
+        </Button>
+      )}
     </form>
   );
 }

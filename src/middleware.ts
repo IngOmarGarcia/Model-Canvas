@@ -32,9 +32,10 @@ export default auth((req) => {
     return NextResponse.redirect(new URL(CHANGE_PASSWORD_PATH, req.nextUrl));
   }
 
-  if (!user.mustChangePassword && isChangePassword) {
-    return NextResponse.redirect(new URL(home, req.nextUrl));
-  }
+  // Cambiar la contraseña por voluntad propia es válido en cualquier momento:
+  // el enlace del menú de usuario apunta aquí. Antes se expulsaba a /f o
+  // /p/lienzo a quien no tuviera contraseña temporal, dejando el menú muerto.
+  if (isChangePassword) return NextResponse.next();
 
   if (isLogin || pathname === '/') {
     return NextResponse.redirect(new URL(home, req.nextUrl));

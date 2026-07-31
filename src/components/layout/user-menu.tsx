@@ -1,8 +1,9 @@
 'use client';
 
 import { KeyRound, LogOut, User } from 'lucide-react';
+import { signOut } from 'next-auth/react';
 import Link from 'next/link';
-import { useTransition } from 'react';
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -13,7 +14,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { logoutAction } from '@/server/actions/auth.actions';
 
 export function UserMenu({
   fullName,
@@ -24,7 +24,7 @@ export function UserMenu({
   username: string;
   roleLabel: string;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
   const initials = fullName
     .split(/\s+/)
@@ -60,9 +60,10 @@ export function UserMenu({
           disabled={pending}
           onSelect={(event) => {
             event.preventDefault();
-            startTransition(() => {
-              void logoutAction();
-            });
+            setPending(true);
+            // signOut del cliente: hace POST a /api/auth/signout, borra la cookie
+            // de sesión en el servidor y recién entonces navega a /login.
+            void signOut({ redirectTo: '/login' });
           }}
         >
           <LogOut className="size-4" />

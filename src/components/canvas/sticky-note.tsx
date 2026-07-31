@@ -1,7 +1,7 @@
 'use client';
 
 import { useDraggable } from '@dnd-kit/core';
-import { Check, GripVertical, Palette, Trash2 } from 'lucide-react';
+import { Check, GripHorizontal, Palette, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -82,6 +82,20 @@ export function StickyNote({
       onPointerDown={onSelect}
       onDoubleClick={() => editable && setEditing(true)}
     >
+      {/* Cabecera de arrastre: toda la franja superior es el asidero. Se oculta
+          al editar para no robarle alto al textarea. */}
+      {editable && !editing && (
+        <div
+          {...listeners}
+          {...attributes}
+          aria-label="Mover nota"
+          onDoubleClick={(event) => event.stopPropagation()}
+          className="flex h-5 shrink-0 cursor-grab touch-none items-center justify-center rounded-t-sm opacity-40 transition-opacity hover:opacity-90 active:cursor-grabbing"
+        >
+          <GripHorizontal className="size-3.5" />
+        </div>
+      )}
+
       {editing ? (
         <textarea
           ref={textareaRef}
@@ -115,16 +129,6 @@ export function StickyNote({
 
       {editable && (
         <div className="flex items-center gap-0.5 px-1 pb-1 opacity-70 transition-opacity hover:opacity-100">
-          <button
-            type="button"
-            className="cursor-grab rounded p-1 active:cursor-grabbing"
-            aria-label="Mover nota"
-            {...listeners}
-            {...attributes}
-          >
-            <GripVertical className="size-3.5" />
-          </button>
-
           <Popover>
             <PopoverTrigger asChild>
               <button type="button" className="rounded p-1" aria-label="Cambiar color">

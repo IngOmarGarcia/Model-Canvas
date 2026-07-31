@@ -9,7 +9,7 @@ import { fail, fromZodError, ok, type ActionResult } from '@/lib/action-result';
 import { hashPassword, verifyPassword } from '@/lib/password';
 import { changePasswordSchema, loginSchema } from '@/lib/validation/auth';
 
-import { signIn, signOut, updateSession } from '../auth';
+import { signIn, signOut } from '../auth';
 import { requireUser } from '../session';
 
 export async function loginAction(input: unknown): Promise<ActionResult<{ redirectTo: string }>> {
@@ -68,8 +68,7 @@ export async function changePasswordAction(input: unknown): Promise<ActionResult
     })
     .where(eq(profiles.id, user.id));
 
-  // Refresca el token para que el middleware deje de forzar el cambio.
-  await updateSession({ mustChangePassword: false } as never);
-
+  // No se parchea el token: el cliente cierra sesión al recibir este ok() y el
+  // usuario vuelve a entrar con la contraseña nueva, con un JWT limpio.
   return ok();
 }
