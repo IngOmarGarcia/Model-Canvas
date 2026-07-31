@@ -50,5 +50,3 @@ export async function POST(request: Request) {
     return Response.json({ error: 'No se pudo generar el análisis.' }, { status: 500 });
   }
 }
-
-export const dynamic = 'force-dynamic';
