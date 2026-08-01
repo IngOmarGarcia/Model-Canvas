@@ -3,6 +3,7 @@
 import {
   AlertCircle,
   Check,
+  LayoutGrid,
   Loader2,
   Maximize,
   Minimize,
@@ -26,9 +27,12 @@ export function CanvasToolbar({
   zoom,
   fullscreen,
   defaultColor,
+  canResetLayout,
   onZoomIn,
   onZoomOut,
+  onZoomReset,
   onFit,
+  onResetLayout,
   onToggleFullscreen,
   onDefaultColorChange,
 }: {
@@ -38,9 +42,13 @@ export function CanvasToolbar({
   zoom: number;
   fullscreen: boolean;
   defaultColor: NoteColor;
+  /** Hay recuadros con tamaño ajustado a mano. */
+  canResetLayout: boolean;
   onZoomIn: () => void;
   onZoomOut: () => void;
+  onZoomReset: () => void;
   onFit: () => void;
+  onResetLayout: () => void;
   onToggleFullscreen: () => void;
   onDefaultColorChange: (color: NoteColor) => void;
 }) {
@@ -78,21 +86,37 @@ export function CanvasToolbar({
         </Popover>
       )}
 
-      {/* El zoom solo tiene sentido en la rejilla de escritorio. */}
+      {/* El zoom y el paneo solo existen en la vista de escritorio. */}
       <div className="hidden items-center gap-1 lg:flex">
         <Button variant="outline" size="icon-sm" onClick={onZoomOut} aria-label="Alejar">
           <Minus className="size-4" />
         </Button>
-        <span className="text-muted-foreground w-12 text-center text-xs tabular-nums">
+        <button
+          type="button"
+          onClick={onZoomReset}
+          title="Volver al 100 % y a la esquina de origen"
+          className="text-muted-foreground hover:text-foreground w-12 rounded text-center text-xs tabular-nums"
+        >
           {Math.round(zoom * 100)} %
-        </span>
+        </button>
         <Button variant="outline" size="icon-sm" onClick={onZoomIn} aria-label="Acercar">
           <Plus className="size-4" />
         </Button>
-        <Button variant="outline" size="sm" onClick={onFit}>
+        <Button variant="outline" size="sm" onClick={onFit} title="Encajar todo el lienzo">
           <Scan className="size-4" />
           Ajustar
         </Button>
+        {canResetLayout && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onResetLayout}
+            title="Devolver los recuadros a su tamaño original"
+          >
+            <LayoutGrid className="size-4" />
+            Restablecer diseño
+          </Button>
+        )}
       </div>
 
       <Button variant="outline" size="sm" onClick={onToggleFullscreen}>

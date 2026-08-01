@@ -187,10 +187,16 @@
 
 @layer utilities {
   /*
-    Rejilla del lienzo BMC. Los bloques se renderizan UNA sola vez, en orden
-    metodológico, y llevan su posición de escritorio en --gc/--gr. Por debajo de
-    lg esas variables se ignoran y los bloques fluyen en columna, así que no hay
-    DOM duplicado (algo que rompería los ids de dnd-kit).
+    Rejilla del lienzo BMC para tablet y móvil. Los bloques se renderizan UNA
+    sola vez, en orden metodológico, y llevan su posición de escritorio en
+    --gc/--gr; por debajo de lg esas variables se ignoran y fluyen en columna,
+    así que no hay DOM duplicado (algo que rompería los ids de dnd-kit).
+
+    En escritorio el lienzo no usa esta rejilla: los bloques van en posición
+    absoluta (ver canvasBaseRects en lib/bmc/layout.ts) para poder
+    redimensionarlos y para que el conjunto se desplace y escale como una sola
+    capa. Las reglas de lg se conservan como respaldo mientras se mide el ancho
+    del contenedor, y por eso deben seguir el mismo reparto de filas.
   */
   .canvas-grid {
     display: grid;
@@ -213,7 +219,8 @@
     .canvas-grid {
       /* 10 columnas para permitir las mitades de la fila inferior. */
       grid-template-columns: repeat(10, minmax(0, 1fr));
-      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.62fr);
+      /* Debe coincidir con CANVAS_ROW_WEIGHTS en lib/bmc/layout.ts. */
+      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.72fr);
     }
 
     .canvas-grid > * {
