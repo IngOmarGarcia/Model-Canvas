@@ -21,9 +21,17 @@ interface MessagesResponse {
   usage?: { input_tokens?: number; output_tokens?: number };
 }
 
+/**
+ * Familias con razonamiento siempre activo, donde pedir `thinking: disabled`
+ * se responde con 400. El campo del modelo es texto libre en la configuración,
+ * así que se comprueba por nombre y no por una lista cerrada.
+ */
+const ALWAYS_THINKING = /(fable|mythos)/i;
+
 /** Proveedor Anthropic (API de mensajes). La clave solo se usa aquí, en servidor. */
 export function createAnthropicProvider(config: ProviderConfig): LlmProvider {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
+  const canDisableThinking = !ALWAYS_THINKING.test(config.model);
 
   async function call(request: LlmRequest, maxTokens: number): Promise<LlmResponse> {
     if (!config.apiKey) {
@@ -42,7 +50,15 @@ export function createAnthropicProvider(config: ProviderConfig): LlmProvider {
         body: JSON.stringify({
           model: config.model,
           max_tokens: maxTokens,
-          temperature: request.temperature ?? 0.3,
+          // Sin `temperature`: los modelos actuales (Claude Opus 5, Sonnet 5,
+          // Opus 4.7/4.8) la eliminaron y responden 400 si se envía. El estilo
+          // se dirige desde el prompt de sistema, no con muestreo.
+          //
+          // Sin razonamiento extendido: en esos modelos viene activado por
+          // omisión y consume el mismo presupuesto que `max_tokens`, así que
+          // un JSON largo se truncaría a mitad. Aquí se pide una salida
+          // estructurada, no una cadena de razonamiento.
+          ...(canDisableThinking ? { thinking: { type: 'disabled' } } : {}),
           system: request.system,
           messages: [{ role: 'user', content: request.prompt }],
         }),
@@ -51,7 +67,7 @@ export function createAnthropicProvider(config: ProviderConfig): LlmProvider {
       throw translateNetworkError(error);
     }
 
-    if (!response.ok) throw translateHttpError(response.status, 'Anthropic');
+    if (!response.ok) throw await translateHttpError(response, 'Anthropic');
 
     const data = (await response.json()) as MessagesResponse;
     const raw = (data.content ?? [])

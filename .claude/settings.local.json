@@ -16,7 +16,11 @@
       "Bash(curl -s -o /tmp/lan.html -w \"status=%{http_code}\\\\n\" http://10.182.1.193:3000/login)",
       "Read(//tmp/**)",
       "Bash(curl -s -D - -o /tmp/lan.css -w \"\\\\nsize=%{size_download} type=%{content_type}\\\\n\" http://10.182.1.193:3000/_next/static/css/app/layout.css)",
-      "Bash(curl -s -o /tmp/lo.css -w \"size=%{size_download}\\\\n\" http://localhost:3000/_next/static/css/app/layout.css)"
+      "Bash(curl -s -o /tmp/lo.css -w \"size=%{size_download}\\\\n\" http://localhost:3000/_next/static/css/app/layout.css)",
+      "Skill(claude-api)",
+      "PowerShell(npx tsx check-llm.mts)",
+      "PowerShell(npx tsx repro-llm.mts)",
+      "PowerShell(npx tsx --conditions=react-server verify-llm.mts)"
     ]
   }
 }

@@ -55,7 +55,7 @@ export function createOpenAiProvider(config: ProviderConfig): LlmProvider {
       throw translateNetworkError(error);
     }
 
-    if (!response.ok) throw translateHttpError(response.status, 'OpenAI');
+    if (!response.ok) throw await translateHttpError(response, 'OpenAI');
 
     const data = (await response.json()) as ChatResponse;
     const raw = data.choices?.[0]?.message?.content ?? '';

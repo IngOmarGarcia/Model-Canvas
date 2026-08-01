@@ -42,7 +42,10 @@ const DEFAULTS: LlmSettingsDto = {
   baseUrl: DEFAULT_BASE_URLS.anthropic,
   hasApiKey: false,
   apiKeyLast4: null,
-  maxOutputTokens: 1500,
+  // El esquema del análisis admite hasta 5 elementos en cada una de sus cuatro
+  // listas, con detalles de 600 caracteres: por debajo de ~3000 tokens la
+  // respuesta se corta a media llave y deja de ser JSON válido.
+  maxOutputTokens: 4000,
   customInstructions: '',
   isEnabled: false,
   lastTestedAt: null,

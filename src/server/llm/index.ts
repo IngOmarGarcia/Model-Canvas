@@ -15,7 +15,7 @@ export const PROVIDER_LABELS: Record<LlmProviderKey, string> = {
 
 /** Modelos sugeridos en la UI; el campo sigue siendo libre. */
 export const SUGGESTED_MODELS: Record<LlmProviderKey, string[]> = {
-  anthropic: ['claude-sonnet-5', 'claude-opus-5', 'claude-haiku-4-5-20251001'],
+  anthropic: ['claude-sonnet-5', 'claude-opus-5', 'claude-haiku-4-5'],
   openai: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'],
   ollama: ['llama3.1', 'qwen2.5', 'mistral'],
 };

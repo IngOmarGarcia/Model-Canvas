@@ -56,7 +56,7 @@ export function createOllamaProvider(config: ProviderConfig): LlmProvider {
       throw translateNetworkError(error);
     }
 
-    if (!response.ok) throw translateHttpError(response.status, 'Ollama');
+    if (!response.ok) throw await translateHttpError(response, 'Ollama');
 
     const data = (await response.json()) as OllamaChatResponse;
     const raw = data.message?.content ?? '';
