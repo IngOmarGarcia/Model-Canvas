@@ -45,7 +45,12 @@ export const moduleKeyEnum = pgEnum(
 /** Derivado de lib/colors.ts. */
 export const noteColorEnum = pgEnum('note_color', NOTE_COLOR_KEYS);
 
-export const llmProviderEnum = pgEnum('llm_provider', ['anthropic', 'openai', 'ollama']);
+export const llmProviderEnum = pgEnum('llm_provider', [
+  'anthropic',
+  'openai',
+  'ollama',
+  'gemini',
+]);
 export type LlmProviderKey = (typeof llmProviderEnum.enumValues)[number];
 
 export const analysisScopeEnum = pgEnum('analysis_scope', ['canvas', 'session']);

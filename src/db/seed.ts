@@ -114,7 +114,11 @@ async function seed(pool: Pool) {
     // 5. Configuración de IA con valores por defecto, deshabilitada y sin clave
     await tx.insert(llmSettings).values({
       organizationId: org.id,
-      provider: (process.env.LLM_PROVIDER ?? 'anthropic') as 'anthropic' | 'openai' | 'ollama',
+      provider: (process.env.LLM_PROVIDER ?? 'anthropic') as
+        | 'anthropic'
+        | 'openai'
+        | 'ollama'
+        | 'gemini',
       model: process.env.LLM_MODEL ?? 'claude-sonnet-5',
       baseUrl: process.env.LLM_BASE_URL || null,
       maxOutputTokens: Number(process.env.LLM_MAX_OUTPUT_TOKENS ?? 1500),

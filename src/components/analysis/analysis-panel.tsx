@@ -88,6 +88,7 @@ export function AnalysisPanel({
   canvasId,
   canForce = false,
   emptyHint,
+  unavailable,
 }: {
   initial: AnalysisView | null;
   scope: 'canvas' | 'session';
@@ -95,11 +96,19 @@ export function AnalysisPanel({
   /** Solo el facilitador puede ignorar la caché. */
   canForce?: boolean;
   emptyHint?: string;
+  /**
+   * Motivo por el que no se pueden pedir análisis nuevos. El panel no se oculta:
+   * explica la situación y sigue mostrando el último análisis guardado, que
+   * conserva todo su valor aunque el proveedor esté caído.
+   */
+  unavailable?: string;
 }) {
   const [analysis, setAnalysis] = useState(initial);
   const [loading, setLoading] = useState(false);
 
   async function request(force = false) {
+    if (unavailable) return;
+
     setLoading(true);
     try {
       const response = await fetch('/api/analysis', {
@@ -126,14 +135,25 @@ export function AnalysisPanel({
 
   return (
     <div className="space-y-4">
+      {unavailable && (
+        <Alert variant="accent">
+          <AlertTitle>El análisis por IA no está disponible ahora mismo</AlertTitle>
+          <AlertDescription>{unavailable}</AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => request(false)} disabled={loading}>
+        <Button onClick={() => request(false)} disabled={loading || Boolean(unavailable)}>
           {loading ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
           {analysis ? 'Actualizar análisis' : 'Solicitar análisis'}
         </Button>
 
         {canForce && analysis && (
-          <Button variant="outline" onClick={() => request(true)} disabled={loading}>
+          <Button
+            variant="outline"
+            onClick={() => request(true)}
+            disabled={loading || Boolean(unavailable)}
+          >
             <RefreshCw className="size-4" />
             Forzar uno nuevo
           </Button>
@@ -143,6 +163,7 @@ export function AnalysisPanel({
           <span className="text-muted-foreground text-xs">
             {tiempoRelativo(analysis.createdAt)} · {analysis.model}
             {analysis.cached && ' · sin cambios desde el último análisis'}
+            {unavailable && ' · último análisis guardado'}
           </span>
         )}
       </div>
@@ -160,7 +181,9 @@ export function AnalysisPanel({
           <CardContent className="p-8 text-center">
             <p className="font-medium">Todavía no hay análisis</p>
             <p className="text-muted-foreground mt-1 text-sm">
-              {emptyHint ?? 'Solicita uno para recibir retroalimentación sobre tu avance.'}
+              {unavailable
+                ? 'En cuanto el análisis vuelva a estar disponible podrás solicitarlo desde aquí. Mientras tanto, sigue trabajando en tu lienzo con normalidad.'
+                : (emptyHint ?? 'Solicita uno para recibir retroalimentación sobre tu avance.')}
             </p>
           </CardContent>
         </Card>
@@ -217,16 +240,5 @@ export function AnalysisPanel({
         </Card>
       )}
     </div>
-  );
-}
-
-export function AnalysisUnavailable() {
-  return (
-    <Alert variant="accent">
-      <AlertTitle>El análisis por IA no está disponible</AlertTitle>
-      <AlertDescription>
-        El facilitador aún no ha configurado un proveedor de inteligencia artificial.
-      </AlertDescription>
-    </Alert>
   );
 }

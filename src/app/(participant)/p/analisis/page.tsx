@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import { AnalysisPanel, AnalysisUnavailable } from '@/components/analysis/analysis-panel';
+import { AnalysisPanel } from '@/components/analysis/analysis-panel';
 import { PageHeader } from '@/components/layout/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { getLatestAnalysis } from '@/server/services/analysis.service';
@@ -43,20 +43,26 @@ export default async function ParticipantAnalysisPage() {
         description="Retroalimentación generada por inteligencia artificial sobre tu avance."
       />
 
-      {available ? (
-        <AnalysisPanel
-          initial={latest}
-          scope="canvas"
-          canvasId={canvas.id}
-          emptyHint={
-            canvas.noteCount === 0
-              ? 'Agrega notas a tu lienzo y después solicita el análisis.'
-              : 'Solicita uno para recibir retroalimentación sobre tu avance.'
-          }
-        />
-      ) : (
-        <AnalysisUnavailable />
-      )}
+      {/*
+        Aunque no se pueda pedir un análisis nuevo, el panel sigue en pie: explica
+        la situación y conserva el último resultado guardado. El participante no
+        recibe detalles del proveedor ni del entorno (docs/03, regla 6).
+      */}
+      <AnalysisPanel
+        initial={latest}
+        scope="canvas"
+        canvasId={canvas.id}
+        unavailable={
+          available
+            ? undefined
+            : 'El facilitador todavía no ha activado el análisis por inteligencia artificial, o el servicio no está disponible en este momento. Puedes seguir trabajando en tu lienzo con normalidad e intentarlo más tarde.'
+        }
+        emptyHint={
+          canvas.noteCount === 0
+            ? 'Agrega notas a tu lienzo y después solicita el análisis.'
+            : 'Solicita uno para recibir retroalimentación sobre tu avance.'
+        }
+      />
     </>
   );
 }

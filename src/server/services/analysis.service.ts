@@ -16,7 +16,14 @@ import type { ModuleKey } from '@/lib/bmc/modules';
 import { canvasContentHash } from '@/lib/hash';
 import { evaluateRateLimit } from '@/lib/rate-limit';
 import { analysisResultSchema, extractJson } from '@/lib/validation/analysis';
-import { createProvider, LlmError, type LlmConfigSource, type ProviderConfig } from '@/server/llm';
+import {
+  createProvider,
+  getFallbackProviderConfig,
+  isRecoverableWithFallback,
+  LlmError,
+  type LlmConfigSource,
+  type ProviderConfig,
+} from '@/server/llm';
 import {
   buildCanvasPrompt,
   buildSessionPrompt,
@@ -143,12 +150,18 @@ async function findCached(
   return row ?? null;
 }
 
-/** Proveedor que de verdad atenderá la petición en este entorno. */
-interface ActiveLlm {
+/** Un destino concreto al que llamar: proveedor + su configuración. */
+interface LlmTarget {
   provider: LlmProviderKey;
   config: ProviderConfig;
+}
+
+/** Proveedor que de verdad atenderá la petición en este entorno. */
+interface ActiveLlm extends LlmTarget {
   customInstructions: string;
   source: LlmConfigSource;
+  /** Respaldo en la nube para cuando el Ollama local no responde. */
+  fallback: LlmTarget | null;
 }
 
 /**
@@ -168,60 +181,115 @@ async function resolveActiveLlm(user: CurrentUser): Promise<ActiveLlm> {
     throw new AnalysisError(runtime.resolved.reason, 409);
   }
 
+  const { provider, config, source } = runtime.resolved;
+
+  // El reintento en caliente se reserva a Ollama: que el servidor local esté
+  // apagado o sin el modelo descargado se salva con la nube, mientras que el
+  // fallo de un proveedor de pago casi siempre es de configuración y taparlo
+  // solo escondería el problema al facilitador.
+  const candidate = provider === 'ollama' ? getFallbackProviderConfig(config.maxOutputTokens) : null;
+
+  // Si el respaldo apunta al mismo sitio que ya falló, no hay nada que reintentar.
+  const esOtroDestino =
+    candidate && !(candidate.provider === provider && candidate.config.baseUrl === config.baseUrl);
+
   return {
-    provider: runtime.resolved.provider,
-    config: runtime.resolved.config,
-    source: runtime.resolved.source,
+    provider,
+    config,
+    source,
     customInstructions: runtime.customInstructions,
+    fallback: esOtroDestino ? { provider: candidate.provider, config: candidate.config } : null,
   };
 }
 
-/** Llama al proveedor y valida; un fallo de formato se reintenta UNA vez. */
-async function generate(
-  settings: ActiveLlm,
+interface Generated {
+  result: AnalysisResult;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  /** Quien respondió de verdad: puede ser el respaldo y no el proveedor previsto. */
+  provider: LlmProviderKey;
+  model: string;
+}
+
+/**
+ * Una llamada completa a un proveedor: incluye el reintento único por formato
+ * inválido. Los errores del propio proveedor (red, clave, cuota) se propagan sin
+ * envolver, para que quien llama pueda decidir si prueba con el respaldo.
+ */
+async function callProvider(
+  target: LlmTarget,
+  customInstructions: string,
   prompt: string,
-): Promise<{ result: AnalysisResult; inputTokens: number | null; outputTokens: number | null; provider: string; model: string }> {
-  const provider = createProvider(settings.provider, settings.config);
-  const system = buildSystemPrompt(settings.customInstructions);
+): Promise<Generated> {
+  const provider = createProvider(target.provider, target.config);
+  const system = buildSystemPrompt(customInstructions);
 
   const attempt = async (extra: string) => {
     const response = await provider.complete({
       system: system + extra,
       prompt,
-      maxOutputTokens: settings.config.maxOutputTokens,
+      maxOutputTokens: target.config.maxOutputTokens,
     });
     const parsed = analysisResultSchema.parse(extractJson(response.raw));
-    return { parsed, response };
+    return {
+      result: parsed,
+      inputTokens: response.inputTokens,
+      outputTokens: response.outputTokens,
+      provider: target.provider,
+      model: target.config.model,
+    } satisfies Generated;
   };
 
   try {
-    const first = await attempt('');
-    return {
-      result: first.parsed,
-      inputTokens: first.response.inputTokens,
-      outputTokens: first.response.outputTokens,
-      provider: settings.provider,
-      model: settings.config.model,
-    };
+    return await attempt('');
   } catch (error) {
-    if (error instanceof LlmError) throw new AnalysisError(error.message, 502);
+    // Repetir el prompt no arregla un fallo del proveedor: solo un JSON inválido.
+    if (error instanceof LlmError) throw error;
 
-    // Reintento único con instrucción de corrección de formato.
     try {
-      const second = await attempt(
+      return await attempt(
         '\n\nIMPORTANTE: tu respuesta anterior no era JSON válido según el esquema. Devuelve SOLO el objeto JSON, sin ningún texto adicional.',
       );
-      return {
-        result: second.parsed,
-        inputTokens: second.response.inputTokens,
-        outputTokens: second.response.outputTokens,
-        provider: settings.provider,
-        model: settings.config.model,
-      };
     } catch (retryError) {
-      if (retryError instanceof LlmError) throw new AnalysisError(retryError.message, 502);
+      if (retryError instanceof LlmError) throw retryError;
       throw new AnalysisError('El modelo devolvió una respuesta que no se pudo interpretar.', 502);
     }
+  }
+}
+
+/**
+ * Genera el análisis con el proveedor activo y, si el local resulta inalcanzable,
+ * reintenta UNA vez con el respaldo en la nube.
+ *
+ * Solo se reintenta ante fallos de conectividad o modelo inexistente: una clave
+ * rechazada o una cuota agotada se propagan tal cual, porque repetirlas contra
+ * otro proveedor no las arregla y ocultaría el motivo real.
+ */
+async function generate(settings: ActiveLlm, prompt: string): Promise<Generated> {
+  try {
+    return await callProvider(settings, settings.customInstructions, prompt);
+  } catch (error) {
+    if (settings.fallback && isRecoverableWithFallback(error)) {
+      console.warn(
+        `[analysis] ${settings.provider} no respondió; se reintenta con ${settings.fallback.provider}:`,
+        error instanceof Error ? error.message : error,
+      );
+
+      try {
+        return await callProvider(settings.fallback, settings.customInstructions, prompt);
+      } catch (fallbackError) {
+        if (fallbackError instanceof LlmError) {
+          throw new AnalysisError(
+            `No se pudo usar el modelo local y el respaldo en la nube tampoco respondió: ${fallbackError.message}`,
+            502,
+          );
+        }
+        throw fallbackError;
+      }
+    }
+
+    if (error instanceof LlmError) throw new AnalysisError(error.message, 502);
+    throw error;
   }
 }
 
@@ -372,6 +440,9 @@ export async function requestAnalysis(
           score: generated.result.puntuacion,
           inputTokens: generated.inputTokens,
           outputTokens: generated.outputTokens,
+          // Si respondió el respaldo, la fila debe reflejarlo y no lo previsto.
+          provider: generated.provider,
+          model: generated.model,
         })
         .where(eq(canvasAnalyses.id, pending.id))
         .returning();

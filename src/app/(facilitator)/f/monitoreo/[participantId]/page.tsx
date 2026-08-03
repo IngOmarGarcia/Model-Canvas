@@ -12,7 +12,11 @@ import { porcentajeAvance, tiempoRelativo } from '@/lib/utils';
 import { getLatestAnalysis } from '@/server/services/analysis.service';
 import { getCanvasById } from '@/server/services/canvas.service';
 import { getWorkspaceContext } from '@/server/services/context.service';
-import { getLlmSettings, isConfigured } from '@/server/services/llm-settings.service';
+import {
+  describeUnavailability,
+  getLlmSettings,
+  isConfigured,
+} from '@/server/services/llm-settings.service';
 import { listParticipants } from '@/server/services/participants.service';
 import { requireRole } from '@/server/session';
 
@@ -79,18 +83,17 @@ export default async function ParticipantCanvasReadOnlyPage({
 
       <CanvasBoard canvasId={canvas.id} initialNotes={canvas.notes} editable={false} />
 
-      {isConfigured(settings) && (
-        <section className="mt-6">
-          <h2 className="mb-3 text-sm font-semibold">Análisis de este lienzo</h2>
-          <AnalysisPanel
-            initial={latestAnalysis}
-            scope="canvas"
-            canvasId={canvas.id}
-            canForce
-            emptyHint="Solicita un análisis para revisar el avance de este participante."
-          />
-        </section>
-      )}
+      <section className="mt-6">
+        <h2 className="mb-3 text-sm font-semibold">Análisis de este lienzo</h2>
+        <AnalysisPanel
+          initial={latestAnalysis}
+          scope="canvas"
+          canvasId={canvas.id}
+          canForce
+          unavailable={isConfigured(settings) ? undefined : describeUnavailability(settings)}
+          emptyHint="Solicita un análisis para revisar el avance de este participante."
+        />
+      </section>
     </>
   );
 }

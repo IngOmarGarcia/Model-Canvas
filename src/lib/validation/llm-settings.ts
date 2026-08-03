@@ -20,7 +20,7 @@ const optionalUrl = z
  * el proveedor de respaldo o un aviso claro). Ver src/server/llm/runtime.ts.
  */
 export const llmSettingsSchema = z.object({
-  provider: z.enum(['anthropic', 'openai', 'ollama']),
+  provider: z.enum(['anthropic', 'openai', 'ollama', 'gemini']),
   model: z.string().trim().min(1, 'Indica el modelo').max(120),
   baseUrl: optionalUrl,
   /**

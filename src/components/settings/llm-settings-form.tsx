@@ -28,12 +28,18 @@ const PROVIDERS = [
   { key: 'anthropic', label: 'Anthropic Claude', defaultUrl: 'https://api.anthropic.com' },
   { key: 'openai', label: 'OpenAI (o API compatible)', defaultUrl: 'https://api.openai.com' },
   { key: 'ollama', label: 'Ollama (local o remoto)', defaultUrl: '' },
+  {
+    key: 'gemini',
+    label: 'Google Gemini (nivel gratuito)',
+    defaultUrl: 'https://generativelanguage.googleapis.com',
+  },
 ] as const;
 
 const SUGGESTED: Record<string, string[]> = {
   anthropic: ['claude-sonnet-5', 'claude-opus-5', 'claude-haiku-4-5-20251001'],
   openai: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'],
   ollama: ['llama3.1', 'qwen2.5', 'mistral'],
+  gemini: ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
 };
 
 /**
@@ -51,10 +57,14 @@ function runtimeNotice(
   const esLocal = runtime.environment === 'local';
 
   if (provider === 'ollama' && esLocal && !url) {
+    const respaldo = runtime.fallback
+      ? ` Si Ollama no responde o no tiene el modelo descargado, el análisis se atenderá automáticamente con ${runtime.fallback.label}.`
+      : ' En producción hará falta una URL pública o un respaldo en la nube.';
+
     return {
       tone: 'accent',
       local: true,
-      text: `Entorno de desarrollo: se usará el Ollama de esta máquina en ${runtime.localOllamaBaseUrl}. Deja la URL vacía para mantener este comportamiento; en producción hará falta una URL pública o un respaldo en la nube.`,
+      text: `Entorno de desarrollo: se usará el Ollama de esta máquina en ${runtime.localOllamaBaseUrl}.${respaldo}`,
     };
   }
 
@@ -73,7 +83,7 @@ function runtimeNotice(
     : {
         tone: 'destructive',
         local: false,
-        text: 'Este servidor no puede alcanzar direcciones locales y no hay proveedor de respaldo configurado: el análisis quedará deshabilitado. Publica Ollama en una URL accesible desde internet o define las variables LLM_FALLBACK_* en el despliegue.',
+        text: 'Este servidor no puede alcanzar direcciones locales y no hay proveedor de respaldo configurado. Añade la variable GEMINI_API_KEY con una clave gratuita de Google AI Studio y el análisis pasará a atenderse con Gemini; como alternativa, publica Ollama en una URL accesible desde internet.',
       };
 }
 

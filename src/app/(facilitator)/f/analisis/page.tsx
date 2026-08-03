@@ -42,19 +42,14 @@ export default async function SessionAnalysisPage() {
         description="Patrones comunes y vacíos recurrentes en los lienzos de la capacitación."
       />
 
-      {isConfigured(settings) ? (
-        <AnalysisPanel
-          initial={latest}
-          scope="session"
-          canForce
-          emptyHint="Los lienzos se envían de forma anónima: el modelo no recibe nombres ni correos."
-        />
-      ) : (
-        <Alert variant="accent">
-          <AlertTitle>El análisis por IA no está disponible</AlertTitle>
-          <AlertDescription>{describeUnavailability(settings)}</AlertDescription>
-        </Alert>
-      )}
+      {/* El panel no se oculta: explica el motivo y conserva el último análisis. */}
+      <AnalysisPanel
+        initial={latest}
+        scope="session"
+        canForce
+        unavailable={isConfigured(settings) ? undefined : describeUnavailability(settings)}
+        emptyHint="Los lienzos se envían de forma anónima: el modelo no recibe nombres ni correos."
+      />
     </>
   );
 }

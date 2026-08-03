@@ -15,6 +15,13 @@
       "when": 1785471462390,
       "tag": "0001_vengeful_blonde_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785779187312,
+      "tag": "0002_add_gemini_provider",
+      "breakpoints": true
     }
   ]
 }

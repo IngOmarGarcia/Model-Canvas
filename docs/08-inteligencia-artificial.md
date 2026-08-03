@@ -34,6 +34,10 @@ fila `llm_settings` (proveedor, modelo, `base_url`, clave descifrada, `max_outpu
 | Anthropic | `POST {baseUrl}/v1/messages` | cabecera `x-api-key` + `anthropic-version` | Predeterminado. Modelos sugeridos: `claude-sonnet-5` (equilibrio) o `claude-opus-5`. |
 | OpenAI | `POST {baseUrl}/v1/chat/completions` | `Authorization: Bearer` | `response_format` JSON cuando el modelo lo admite. |
 | Ollama (local o remoto) | `POST {baseUrl}/api/chat` | opcional (`Authorization` si hay proxy u Ollama Cloud) | `baseUrl` vacía = la resuelve el entorno (ver abajo). Sin clave en instalaciones abiertas. `format: "json"`. |
+| Google Gemini | `POST {baseUrl}/v1beta/models/{modelo}:generateContent` | cabecera `x-goog-api-key` | Respaldo por defecto en producción. Nivel gratuito de Google AI Studio. `responseMimeType: "application/json"`. |
+
+La clave de Gemini viaja en la cabecera y **no** en la query string, que acabaría en los registros de
+acceso del proveedor y de cualquier proxy intermedio.
 
 `baseUrl` siempre proviene de la configuración o de variables de entorno; nunca está codificada.
 
@@ -63,24 +67,58 @@ sobre todo; `NETLIFY_DEV` es *local* aunque defina `NETLIFY`, porque `netlify de
 máquina del desarrollador; `NETLIFY`, `AWS_LAMBDA_FUNCTION_NAME` o `VERCEL` son *hosted*; en último
 término decide `NODE_ENV`.
 
-**Respaldo en la nube.** Se define solo por variables de entorno del despliegue, nunca por la base
-de datos: es una característica del alojamiento, no de la organización.
+**Respaldo en la nube: Gemini.** Se define solo por variables de entorno del despliegue, nunca por la
+base de datos: es una característica del alojamiento, no de la organización.
+
+Para Netlify basta **una** variable:
+
+```
+GEMINI_API_KEY="AIza..."   # https://aistudio.google.com/apikey
+```
+
+Con ella, un Ollama inalcanzable pasa a atenderse con `gemini-2.0-flash`. Opcionalmente
+`GEMINI_MODEL` y `GEMINI_BASE_URL` cambian modelo y endpoint; también se aceptan
+`GOOGLE_GENERATIVE_AI_API_KEY` y `GOOGLE_API_KEY` como alias de la clave.
+
+Si se prefiere otro proveedor, las variables genéricas tienen **prioridad** sobre `GEMINI_API_KEY`:
 
 | Variable | Uso |
 | -------- | --- |
-| `LLM_FALLBACK_PROVIDER` | `openai` (por defecto), `anthropic` u `ollama` |
+| `LLM_FALLBACK_PROVIDER` | `openai` (por defecto), `anthropic`, `ollama` o `gemini` |
 | `LLM_FALLBACK_BASE_URL` | URL del proveedor compatible (Groq, OpenRouter, Together, Ollama Cloud…) |
-| `LLM_FALLBACK_MODEL` | Obligatoria: sin modelo no hay respaldo |
+| `LLM_FALLBACK_MODEL` | Obligatoria salvo en `gemini`, que tiene modelo por defecto |
 | `LLM_FALLBACK_API_KEY` | Obligatoria salvo con `ollama` detrás de un proxy abierto |
 | `LLM_FALLBACK_LABEL` | Texto para la interfaz; por defecto `modelo (host)` |
 
-El respaldo se ignora si está incompleto o si apunta a una dirección local, y **solo** entra en
-juego cuando la configuración de la organización es inalcanzable: un Anthropic u OpenAI bien
-configurados nunca se desvían. `max_output_tokens` sigue siendo el de la organización, y las filas
-de `canvas_analyses` registran el proveedor y el modelo que de verdad respondieron.
+Un respaldo se descarta si está incompleto o si apunta a una dirección local. Si el explícito resulta
+inválido y hay `GEMINI_API_KEY`, Gemini lo rescata: es una cadena de respaldo, no una lista
+excluyente, y el proveedor que queda activo se muestra por su nombre en Configuración, así que la
+sustitución nunca es invisible.
 
-Sin respaldo definido no hay error de red: `isAnalysisAvailable()` devuelve `false`, el participante
-ve el panel de "no disponible" y el facilitador recibe en Configuración el motivo exacto.
+El respaldo **solo** entra en juego cuando la configuración de la organización es inalcanzable: un
+Anthropic u OpenAI bien configurados nunca se desvían. `max_output_tokens` sigue siendo el de la
+organización, y las filas de `canvas_analyses` registran el proveedor y el modelo que de verdad
+respondieron, no los previstos.
+
+### Reintento en caliente (también en desarrollo)
+
+Que la configuración sea válida no garantiza que Ollama esté encendido. Si el proveedor activo es
+**Ollama** y la llamada falla por conectividad (`network`) o porque el modelo no está descargado
+(`not-found`), `generate()` reintenta **una vez** con el respaldo. Así, en desarrollo, olvidarse de
+`ollama serve` no interrumpe la capacitación.
+
+El reintento se limita a esos dos casos y a Ollama a propósito: una clave rechazada, una cuota
+agotada o un error 5xx de un proveedor de pago se propagan tal cual, porque repetirlos contra otro
+proveedor no los arregla y ocultaría el motivo real al facilitador. `LlmError.kind`
+(`src/server/llm/types.ts`) es lo que permite distinguirlos.
+
+### Cuando no hay ninguna opción disponible
+
+La interfaz **no se deshabilita**: `AnalysisPanel` recibe `unavailable` con el motivo, muestra un
+aviso amable, desactiva el botón de solicitar y **sigue mostrando el último análisis guardado**, que
+conserva su valor aunque el proveedor esté caído. El facilitador ve el motivo accionable
+(`describeUnavailability()`); el participante, un texto genérico sin datos del proveedor ni del
+entorno (docs/03, regla 6).
 
 ## Manejo de claves
 

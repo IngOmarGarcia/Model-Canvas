@@ -71,6 +71,7 @@ export function createOllamaProvider(config: ProviderConfig): LlmProvider {
       if (isLocalRuntime() && isLocallyBoundUrl(baseUrl)) {
         throw new LlmError(
           `${translated.message} Comprueba que Ollama esté en marcha en ${baseUrl} (ejecuta "ollama serve").`,
+          translated.kind,
         );
       }
 

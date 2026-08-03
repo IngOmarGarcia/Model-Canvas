@@ -36,12 +36,35 @@ export interface ProviderConfig {
   maxOutputTokens: number;
 }
 
+/**
+ * Naturaleza del fallo. Permite decidir si tiene sentido reintentar con otro
+ * proveedor: que Ollama no responda (`network`) o que el modelo no esté
+ * descargado (`not-found`) se puede salvar con el respaldo en la nube; una clave
+ * rechazada o una cuota agotada, no.
+ */
+export type LlmErrorKind =
+  | 'network'
+  | 'timeout'
+  | 'auth'
+  | 'not-found'
+  | 'rate-limit'
+  | 'server'
+  | 'request';
+
 /** Error del proveedor ya traducido: nunca expone la clave ni el cuerpo crudo. */
 export class LlmError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly kind: LlmErrorKind = 'request',
+  ) {
     super(message);
     this.name = 'LlmError';
   }
+}
+
+/** ¿Merece la pena reintentar esta petición con el proveedor de respaldo? */
+export function isRecoverableWithFallback(error: unknown): boolean {
+  return error instanceof LlmError && (error.kind === 'network' || error.kind === 'not-found');
 }
 
 export const REQUEST_TIMEOUT_MS = 60_000;
@@ -97,28 +120,32 @@ export async function translateHttpError(
   const suffix = reason ? ` Detalle del proveedor: ${reason}` : '';
 
   if (status === 401 || status === 403) {
-    return new LlmError(`La clave API fue rechazada por el proveedor.${suffix}`);
+    return new LlmError(`La clave API fue rechazada por el proveedor.${suffix}`, 'auth');
   }
   if (status === 404) {
-    return new LlmError(`El modelo o la URL base no existen en el proveedor.${suffix}`);
+    return new LlmError(`El modelo o la URL base no existen en el proveedor.${suffix}`, 'not-found');
   }
   if (status === 429) {
     return new LlmError(
       `El proveedor limitó la cantidad de peticiones. Inténtalo más tarde.${suffix}`,
+      'rate-limit',
     );
   }
   if (status >= 500) {
-    return new LlmError(`${providerLabel} tuvo un error interno. Inténtalo más tarde.${suffix}`);
+    return new LlmError(
+      `${providerLabel} tuvo un error interno. Inténtalo más tarde.${suffix}`,
+      'server',
+    );
   }
-  return new LlmError(`El proveedor rechazó la petición (código ${status}).${suffix}`);
+  return new LlmError(`El proveedor rechazó la petición (código ${status}).${suffix}`, 'request');
 }
 
 export function translateNetworkError(error: unknown): LlmError {
   if (error instanceof LlmError) return error;
   if (error instanceof DOMException && error.name === 'AbortError') {
-    return new LlmError('Se agotó el tiempo de espera del proveedor.');
+    return new LlmError('Se agotó el tiempo de espera del proveedor.', 'timeout');
   }
-  return new LlmError('No se pudo alcanzar la URL base del proveedor.');
+  return new LlmError('No se pudo alcanzar la URL base del proveedor.', 'network');
 }
 
 /** fetch con tiempo límite; el proveedor nunca deja la petición colgada. */

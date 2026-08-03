@@ -3,6 +3,7 @@ import 'server-only';
 import type { LlmProviderKey } from '@/db/schema/enums';
 import { isLocallyBoundUrl, normalizeBaseUrl } from '@/lib/llm-url';
 
+import { GEMINI_DEFAULT_BASE_URL, GEMINI_DEFAULT_MODEL } from './gemini';
 import type { ProviderConfig } from './types';
 
 /**
@@ -82,36 +83,23 @@ export interface CloudFallback {
 }
 
 function isProviderKey(value: string): value is LlmProviderKey {
-  return value === 'anthropic' || value === 'openai' || value === 'ollama';
+  return value === 'anthropic' || value === 'openai' || value === 'ollama' || value === 'gemini';
 }
 
-/**
- * Proveedor de respaldo para producción, definido solo por variables de entorno
- * (nunca por la base de datos: es una característica del despliegue, no de la
- * organización).
- *
- * Groq, OpenRouter, Together y compañía exponen la API de OpenAI, así que
- * `LLM_FALLBACK_PROVIDER="openai"` con su `LLM_FALLBACK_BASE_URL` basta para
- * cualquiera de ellos. Ollama Cloud (https://ollama.com) funciona con
- * `provider="ollama"` y su clave.
- */
-export function getCloudFallback(): CloudFallback | null {
-  const rawProvider = (process.env.LLM_FALLBACK_PROVIDER ?? 'openai').trim().toLowerCase();
-  if (!isProviderKey(rawProvider)) return null;
+/** Modelos por defecto de los proveedores que tienen uno obvio en su nivel gratuito. */
+const FALLBACK_DEFAULT_MODEL: Partial<Record<LlmProviderKey, string>> = {
+  gemini: GEMINI_DEFAULT_MODEL,
+};
 
-  const model = process.env.LLM_FALLBACK_MODEL?.trim() ?? '';
-  const baseUrl = normalizeBaseUrl(process.env.LLM_FALLBACK_BASE_URL);
-  const apiKey = process.env.LLM_FALLBACK_API_KEY?.trim() ?? '';
+const FALLBACK_DEFAULT_BASE_URL: Partial<Record<LlmProviderKey, string>> = {
+  gemini: GEMINI_DEFAULT_BASE_URL,
+};
 
-  // Sin modelo no hay respaldo posible.
-  if (!model) return null;
+function describeFallback(provider: LlmProviderKey, model: string, baseUrl: string): string {
+  const explicit = process.env.LLM_FALLBACK_LABEL?.trim();
+  if (explicit) return explicit;
 
-  // Ollama remoto puede ir sin clave detrás de un proxy, pero necesita URL.
-  if (rawProvider === 'ollama' && !baseUrl) return null;
-  if (rawProvider !== 'ollama' && !apiKey) return null;
-
-  // Un respaldo apuntando a localhost repetiría el problema que viene a resolver.
-  if (isLocallyBoundUrl(baseUrl)) return null;
+  if (provider === 'gemini') return `Google Gemini · ${model}`;
 
   let host = '';
   try {
@@ -120,12 +108,113 @@ export function getCloudFallback(): CloudFallback | null {
     host = '';
   }
 
-  return {
-    provider: rawProvider,
-    model,
-    baseUrl,
+  return host ? `${model} (${host})` : model;
+}
+
+/**
+ * Respaldo declarado con las variables genéricas `LLM_FALLBACK_*`.
+ *
+ * Groq, OpenRouter, Together y compañía exponen la API de OpenAI, así que
+ * `LLM_FALLBACK_PROVIDER="openai"` con su `LLM_FALLBACK_BASE_URL` basta para
+ * cualquiera de ellos. Ollama Cloud (https://ollama.com) funciona con
+ * `provider="ollama"` y su clave.
+ */
+function readExplicitFallback(): CloudFallback | null {
+  const rawProvider = process.env.LLM_FALLBACK_PROVIDER?.trim().toLowerCase();
+  const model = process.env.LLM_FALLBACK_MODEL?.trim() ?? '';
+  const baseUrl = normalizeBaseUrl(process.env.LLM_FALLBACK_BASE_URL);
+  const apiKey = process.env.LLM_FALLBACK_API_KEY?.trim() ?? '';
+
+  // Sin ninguna variable declarada no hay respaldo explícito: decide GEMINI_API_KEY.
+  if (!rawProvider && !model && !baseUrl && !apiKey) return null;
+
+  const provider = rawProvider || 'openai';
+  if (!isProviderKey(provider)) return null;
+
+  return buildFallback({
+    provider,
+    model: model || FALLBACK_DEFAULT_MODEL[provider] || '',
+    baseUrl: baseUrl || FALLBACK_DEFAULT_BASE_URL[provider] || '',
     apiKey,
-    label: process.env.LLM_FALLBACK_LABEL?.trim() || (host ? `${model} (${host})` : model),
+  });
+}
+
+/**
+ * Camino corto para el caso que nos ocupa: basta con pegar la clave de Google AI
+ * Studio en `GEMINI_API_KEY` y el respaldo queda configurado, con su URL y su
+ * modelo por defecto.
+ */
+function readGeminiFallback(): CloudFallback | null {
+  const apiKey = (
+    process.env.GEMINI_API_KEY ??
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY ??
+    process.env.GOOGLE_API_KEY ??
+    ''
+  ).trim();
+
+  if (!apiKey) return null;
+
+  return buildFallback({
+    provider: 'gemini',
+    model: process.env.GEMINI_MODEL?.trim() || GEMINI_DEFAULT_MODEL,
+    baseUrl: normalizeBaseUrl(process.env.GEMINI_BASE_URL) || GEMINI_DEFAULT_BASE_URL,
+    apiKey,
+  });
+}
+
+/** Valida un candidato a respaldo; devuelve null si está incompleto o es inútil. */
+function buildFallback(candidate: {
+  provider: LlmProviderKey;
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+}): CloudFallback | null {
+  const { provider, model, baseUrl, apiKey } = candidate;
+
+  // Sin modelo no hay respaldo posible.
+  if (!model) return null;
+
+  // Ollama remoto puede ir sin clave detrás de un proxy, pero necesita URL.
+  if (provider === 'ollama' && !baseUrl) return null;
+  if (provider !== 'ollama' && !apiKey) return null;
+
+  // Un respaldo apuntando a localhost repetiría el problema que viene a resolver.
+  if (isLocallyBoundUrl(baseUrl)) return null;
+
+  return { provider, model, baseUrl, apiKey, label: describeFallback(provider, model, baseUrl) };
+}
+
+/**
+ * Proveedor de respaldo, definido solo por variables de entorno (nunca por la
+ * base de datos: es una característica del despliegue, no de la organización).
+ *
+ * `LLM_FALLBACK_*` tiene prioridad para no romper despliegues que ya lo usen;
+ * si no hay ninguna, `GEMINI_API_KEY` basta por sí sola.
+ */
+export function getCloudFallback(): CloudFallback | null {
+  return readExplicitFallback() ?? readGeminiFallback();
+}
+
+/**
+ * Respaldo listo para `createProvider()`, respetando el límite de salida de la
+ * organización. Se usa tanto para sustituir a un Ollama inalcanzable como para
+ * reintentar cuando el Ollama local no responde.
+ */
+export function getFallbackProviderConfig(
+  maxOutputTokens: number,
+): { provider: LlmProviderKey; config: ProviderConfig; label: string } | null {
+  const fallback = getCloudFallback();
+  if (!fallback) return null;
+
+  return {
+    provider: fallback.provider,
+    label: fallback.label,
+    config: {
+      model: fallback.model,
+      baseUrl: fallback.baseUrl,
+      apiKey: fallback.apiKey,
+      maxOutputTokens,
+    },
   };
 }
 
@@ -142,9 +231,9 @@ export function unreachableMessage(baseUrl: string): string {
   return (
     `${dónde} y el servidor de producción no puede alcanzarla: el análisis con Ollama ` +
     'solo funciona ejecutando la aplicación en el entorno de desarrollo. ' +
-    'Para habilitarlo en producción, publica Ollama en una URL accesible desde internet ' +
-    'y guárdala en Configuración, o define un proveedor de respaldo en la nube con las ' +
-    'variables LLM_FALLBACK_* del despliegue.'
+    'Para habilitarlo aquí, añade la variable GEMINI_API_KEY del despliegue con una clave ' +
+    'gratuita de Google AI Studio y el análisis pasará a atenderse con Gemini; también puedes ' +
+    'publicar Ollama en una URL accesible desde internet y guardarla en Configuración.'
   );
 }
 
