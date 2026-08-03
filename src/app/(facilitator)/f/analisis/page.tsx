@@ -5,7 +5,11 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { getLatestAnalysis } from '@/server/services/analysis.service';
 import { getWorkspaceContext } from '@/server/services/context.service';
-import { getLlmSettings, isConfigured } from '@/server/services/llm-settings.service';
+import {
+  describeUnavailability,
+  getLlmSettings,
+  isConfigured,
+} from '@/server/services/llm-settings.service';
 import { requireRole } from '@/server/session';
 
 export const metadata: Metadata = { title: 'Análisis general' };
@@ -47,10 +51,8 @@ export default async function SessionAnalysisPage() {
         />
       ) : (
         <Alert variant="accent">
-          <AlertTitle>Configura el proveedor de IA</AlertTitle>
-          <AlertDescription>
-            Ve a Configuración, guarda la clave y habilita el análisis para poder usarlo.
-          </AlertDescription>
+          <AlertTitle>El análisis por IA no está disponible</AlertTitle>
+          <AlertDescription>{describeUnavailability(settings)}</AlertDescription>
         </Alert>
       )}
     </>

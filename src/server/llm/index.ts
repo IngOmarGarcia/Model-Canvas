@@ -9,8 +9,8 @@ import type { LlmProvider, ProviderConfig } from './types';
 
 export const PROVIDER_LABELS: Record<LlmProviderKey, string> = {
   anthropic: 'Anthropic Claude',
-  openai: 'OpenAI',
-  ollama: 'Ollama (remoto)',
+  openai: 'OpenAI (o cualquier API compatible)',
+  ollama: 'Ollama (local o remoto)',
 };
 
 /** Modelos sugeridos en la UI; el campo sigue siendo libre. */
@@ -40,3 +40,21 @@ export function createProvider(provider: LlmProviderKey, config: ProviderConfig)
 
 export type { LlmProvider, LlmTestResult, ProviderConfig } from './types';
 export { LlmError } from './types';
+export {
+  canRunHere,
+  DEFAULT_OLLAMA_BASE_URL,
+  describeLlmRuntime,
+  getCloudFallback,
+  getLocalOllamaBaseUrl,
+  getRuntimeEnvironment,
+  hasCloudFallback,
+  isLocallyBoundUrl,
+  isLocalRuntime,
+  resolveLlmRuntime,
+  unreachableMessage,
+  willUseCloudFallback,
+  type LlmConfigSource,
+  type LlmRuntimeEnvironment,
+  type LlmRuntimeInfo,
+  type ResolvedLlm,
+} from './runtime';

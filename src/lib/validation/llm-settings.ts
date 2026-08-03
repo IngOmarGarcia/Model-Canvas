@@ -14,32 +14,27 @@ const optionalUrl = z
   .optional()
   .default('');
 
-export const llmSettingsSchema = z
-  .object({
-    provider: z.enum(['anthropic', 'openai', 'ollama']),
-    model: z.string().trim().min(1, 'Indica el modelo').max(120),
-    baseUrl: optionalUrl,
-    /**
-     * Vacío significa "conserva la clave actual": la clave guardada nunca
-     * vuelve al cliente, así que el formulario no puede reenviarla.
-     */
-    apiKey: z.string().trim().max(300).optional().default(''),
-    maxOutputTokens: z.coerce
-      .number()
-      .int()
-      .min(MAX_OUTPUT_MIN, `Mínimo ${MAX_OUTPUT_MIN}`)
-      .max(MAX_OUTPUT_MAX, `Máximo ${MAX_OUTPUT_MAX}`),
-    customInstructions: z.string().trim().max(CUSTOM_INSTRUCTIONS_MAX).optional().default(''),
-    isEnabled: z.boolean().default(false),
-  })
-  .superRefine((data, ctx) => {
-    if (data.provider === 'ollama' && !data.baseUrl) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['baseUrl'],
-        message: 'Ollama necesita una URL base (no se asume ningún host).',
-      });
-    }
-  });
+/**
+ * Con Ollama la URL base es opcional a propósito: si se deja vacía, el servidor
+ * decide según el entorno (en desarrollo, el Ollama de la máquina; en producción,
+ * el proveedor de respaldo o un aviso claro). Ver src/server/llm/runtime.ts.
+ */
+export const llmSettingsSchema = z.object({
+  provider: z.enum(['anthropic', 'openai', 'ollama']),
+  model: z.string().trim().min(1, 'Indica el modelo').max(120),
+  baseUrl: optionalUrl,
+  /**
+   * Vacío significa "conserva la clave actual": la clave guardada nunca
+   * vuelve al cliente, así que el formulario no puede reenviarla.
+   */
+  apiKey: z.string().trim().max(300).optional().default(''),
+  maxOutputTokens: z.coerce
+    .number()
+    .int()
+    .min(MAX_OUTPUT_MIN, `Mínimo ${MAX_OUTPUT_MIN}`)
+    .max(MAX_OUTPUT_MAX, `Máximo ${MAX_OUTPUT_MAX}`),
+  customInstructions: z.string().trim().max(CUSTOM_INSTRUCTIONS_MAX).optional().default(''),
+  isEnabled: z.boolean().default(false),
+});
 
 export type LlmSettingsInput = z.infer<typeof llmSettingsSchema>;

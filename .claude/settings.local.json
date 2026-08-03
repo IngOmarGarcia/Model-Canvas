@@ -20,7 +20,8 @@
       "Skill(claude-api)",
       "PowerShell(npx tsx check-llm.mts)",
       "PowerShell(npx tsx repro-llm.mts)",
-      "PowerShell(npx tsx --conditions=react-server verify-llm.mts)"
+      "PowerShell(npx tsx --conditions=react-server verify-llm.mts)",
+      "PowerShell(npx tsx --conditions=react-server verify-runtime.mts)"
     ]
   }
 }

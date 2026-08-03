@@ -7,7 +7,7 @@ import { llmSettingsSchema } from '@/lib/validation/llm-settings';
 import { createProvider, type LlmTestResult } from '@/server/llm';
 
 import {
-  getProviderConfig,
+  getResolvedLlmRuntime,
   NotAllowedError,
   recordTestResult,
   saveLlmSettings,
@@ -33,6 +33,11 @@ export async function saveLlmSettingsAction(input: unknown): Promise<ActionResul
 
 /**
  * Prueba de conexión con el proveedor.
+ *
+ * Prueba el proveedor RESUELTO, no el guardado: así el resultado corresponde a
+ * lo que ocurrirá al pedir un análisis desde este mismo entorno (Ollama local en
+ * desarrollo, respaldo en la nube en Netlify).
+ *
  * Devuelve un error traducido; nunca el cuerpo crudo del proveedor, que podría
  * contener fragmentos de la clave (docs/08).
  */
@@ -40,10 +45,16 @@ export async function testLlmConnectionAction(): Promise<ActionResult<LlmTestRes
   const user = await requireRole('facilitator');
 
   try {
-    const settings = await getProviderConfig(user);
-    if (!settings) return fail('Primero guarda la configuración del proveedor.');
+    const runtime = await getResolvedLlmRuntime(user);
+    if (!runtime) return fail('Primero guarda la configuración del proveedor.');
 
-    const provider = createProvider(settings.provider, settings.config);
+    if (!runtime.resolved.ok) {
+      await recordTestResult(user, false);
+      revalidatePath('/f/configuracion');
+      return ok({ ok: false, error: runtime.resolved.reason });
+    }
+
+    const provider = createProvider(runtime.resolved.provider, runtime.resolved.config);
     const result = await provider.test();
 
     await recordTestResult(user, result.ok);

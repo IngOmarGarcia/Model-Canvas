@@ -3,7 +3,7 @@ import 'server-only';
 import { and, asc, count, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 
 import { db } from '@/db';
-import type { AnalysisScope } from '@/db/schema/enums';
+import type { AnalysisScope, LlmProviderKey } from '@/db/schema/enums';
 import type { AnalysisResult } from '@/db/schema/analyses';
 import {
   activityEvents,
@@ -16,7 +16,7 @@ import type { ModuleKey } from '@/lib/bmc/modules';
 import { canvasContentHash } from '@/lib/hash';
 import { evaluateRateLimit } from '@/lib/rate-limit';
 import { analysisResultSchema, extractJson } from '@/lib/validation/analysis';
-import { createProvider, LlmError } from '@/server/llm';
+import { createProvider, LlmError, type LlmConfigSource, type ProviderConfig } from '@/server/llm';
 import {
   buildCanvasPrompt,
   buildSessionPrompt,
@@ -24,7 +24,7 @@ import {
 } from '@/server/llm/prompts';
 import { buildSystemPrompt } from '@/server/llm/prompts';
 
-import { getProviderConfig } from './llm-settings.service';
+import { getResolvedLlmRuntime } from './llm-settings.service';
 import type { CurrentUser } from '../session';
 
 export class AnalysisError extends Error {
@@ -143,17 +143,44 @@ async function findCached(
   return row ?? null;
 }
 
-/** Llama al proveedor y valida; un fallo de formato se reintenta UNA vez. */
-async function generate(
-  user: CurrentUser,
-  prompt: string,
-): Promise<{ result: AnalysisResult; inputTokens: number | null; outputTokens: number | null; provider: string; model: string }> {
-  const settings = await getProviderConfig(user);
+/** Proveedor que de verdad atenderá la petición en este entorno. */
+interface ActiveLlm {
+  provider: LlmProviderKey;
+  config: ProviderConfig;
+  customInstructions: string;
+  source: LlmConfigSource;
+}
 
-  if (!settings) {
+/**
+ * Configuración de la organización (Neon) ya adaptada al entorno de ejecución.
+ *
+ * Es aquí donde se traduce "Ollama en localhost" a algo utilizable: en
+ * desarrollo, el servidor de la máquina; en Netlify, el proveedor de respaldo o
+ * un 409 explicando por qué no se puede.
+ */
+async function resolveActiveLlm(user: CurrentUser): Promise<ActiveLlm> {
+  const runtime = await getResolvedLlmRuntime(user);
+
+  if (!runtime) {
     throw new AnalysisError('El facilitador aún no configuró el proveedor de IA.', 409);
   }
+  if (!runtime.resolved.ok) {
+    throw new AnalysisError(runtime.resolved.reason, 409);
+  }
 
+  return {
+    provider: runtime.resolved.provider,
+    config: runtime.resolved.config,
+    source: runtime.resolved.source,
+    customInstructions: runtime.customInstructions,
+  };
+}
+
+/** Llama al proveedor y valida; un fallo de formato se reintenta UNA vez. */
+async function generate(
+  settings: ActiveLlm,
+  prompt: string,
+): Promise<{ result: AnalysisResult; inputTokens: number | null; outputTokens: number | null; provider: string; model: string }> {
   const provider = createProvider(settings.provider, settings.config);
   const system = buildSystemPrompt(settings.customInstructions);
 
@@ -296,8 +323,10 @@ export async function requestAnalysis(
   // 2. Cuota (solo se evalúa cuando de verdad se va a llamar al proveedor).
   await enforceRateLimit(user);
 
-  const settings = await getProviderConfig(user);
-  if (!settings) throw new AnalysisError('El facilitador aún no configuró el proveedor de IA.', 409);
+  // El proveedor se resuelve ANTES de crear la fila: si en este entorno no hay
+  // ninguno utilizable, el facilitador recibe el motivo y no queda un 'pending'
+  // huérfano en la base de datos.
+  const settings = await resolveActiveLlm(user);
 
   // 3. Fila 'pending': evita dos análisis simultáneos del mismo contenido.
   const [pending] = await db
@@ -315,7 +344,7 @@ export async function requestAnalysis(
     .returning();
 
   try {
-    const generated = await generate(user, prompt);
+    const generated = await generate(settings, prompt);
 
     const [saved] = await db.transaction(async (tx) => {
       // "Forzar uno nuevo" reemplaza al análisis vigente del mismo contenido:

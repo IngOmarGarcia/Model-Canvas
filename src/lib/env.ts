@@ -39,7 +39,13 @@ export function getEnv(): Env {
   return cached;
 }
 
-/** Valores por defecto del proveedor de IA usados solo por la semilla (Fase 5). */
+/**
+ * Valores por defecto del proveedor de IA usados solo por la semilla (Fase 5).
+ *
+ * `baseUrl` vacía con el proveedor `ollama` no es un olvido: significa "que lo
+ * resuelva el entorno" (src/server/llm/runtime.ts), que en desarrollo apunta al
+ * Ollama de la máquina y en producción al respaldo LLM_FALLBACK_*.
+ */
 export function getLlmSeedDefaults() {
   return {
     provider: process.env.LLM_PROVIDER ?? 'anthropic',

@@ -7,7 +7,16 @@ import type { LlmProviderKey } from '@/db/schema/enums';
 import { llmSettings } from '@/db/schema';
 import { decryptSecret, encryptSecret, last4 } from '@/lib/crypto';
 import type { LlmSettingsInput } from '@/lib/validation/llm-settings';
-import { DEFAULT_BASE_URLS } from '@/server/llm';
+import {
+  canRunHere,
+  DEFAULT_BASE_URLS,
+  describeLlmRuntime,
+  resolveLlmRuntime,
+  unreachableMessage,
+  willUseCloudFallback,
+  type LlmRuntimeInfo,
+  type ResolvedLlm,
+} from '@/server/llm';
 import type { ProviderConfig } from '@/server/llm/types';
 
 import type { CurrentUser } from '../session';
@@ -34,9 +43,15 @@ export interface LlmSettingsDto {
   isEnabled: boolean;
   lastTestedAt: Date | null;
   lastTestOk: boolean | null;
+  /**
+   * Entorno donde corre el servidor y respaldo disponible. No sale de la base de
+   * datos sino del despliegue, y no contiene ningún secreto: sirve para que el
+   * formulario explique qué pasará con Ollama aquí.
+   */
+  runtime: LlmRuntimeInfo;
 }
 
-const DEFAULTS: LlmSettingsDto = {
+const DEFAULTS: Omit<LlmSettingsDto, 'runtime'> = {
   provider: 'anthropic',
   model: 'claude-sonnet-5',
   baseUrl: DEFAULT_BASE_URLS.anthropic,
@@ -61,9 +76,12 @@ export async function getLlmSettings(user: CurrentUser): Promise<LlmSettingsDto>
     .where(eq(llmSettings.organizationId, user.organizationId))
     .limit(1);
 
-  if (!row) return DEFAULTS;
+  const runtime = describeLlmRuntime();
+
+  if (!row) return { ...DEFAULTS, runtime };
 
   return {
+    runtime,
     provider: row.provider,
     model: row.model,
     baseUrl: row.baseUrl ?? '',
@@ -136,6 +154,25 @@ export async function getProviderConfig(
   };
 }
 
+/**
+ * Configuración lista para usarse EN ESTE ENTORNO.
+ *
+ * Es la que deben pedir el análisis y la prueba de conexión: parte de lo que el
+ * facilitador guardó en Neon y le aplica las reglas del entorno (Ollama local en
+ * desarrollo, respaldo en la nube o mensaje claro en producción).
+ */
+export async function getResolvedLlmRuntime(
+  user: CurrentUser,
+): Promise<{ resolved: ResolvedLlm; customInstructions: string } | null> {
+  const stored = await getProviderConfig(user);
+  if (!stored) return null;
+
+  return {
+    resolved: resolveLlmRuntime({ provider: stored.provider, config: stored.config }),
+    customInstructions: stored.customInstructions,
+  };
+}
+
 export async function recordTestResult(user: CurrentUser, ok: boolean) {
   await db
     .update(llmSettings)
@@ -145,8 +182,29 @@ export async function recordTestResult(user: CurrentUser, ok: boolean) {
 
 export function isConfigured(settings: LlmSettingsDto): boolean {
   if (!settings.isEnabled) return false;
-  if (settings.provider === 'ollama') return Boolean(settings.baseUrl);
-  return settings.hasApiKey;
+
+  // Con respaldo activo, la clave y la URL las pone el despliegue.
+  if (willUseCloudFallback(settings.provider, settings.baseUrl)) return true;
+  if (!canRunHere(settings.provider, settings.baseUrl)) return false;
+
+  // Ollama no necesita clave; los demás proveedores sí.
+  return settings.provider === 'ollama' || settings.hasApiKey;
+}
+
+/**
+ * Por qué el análisis no está disponible, en palabras para el facilitador.
+ * Solo tiene sentido cuando `isConfigured()` es falso.
+ */
+export function describeUnavailability(settings: LlmSettingsDto): string {
+  if (!settings.isEnabled) {
+    return 'Ve a Configuración, elige el proveedor y habilita el análisis por IA.';
+  }
+
+  if (!canRunHere(settings.provider, settings.baseUrl)) {
+    return unreachableMessage(settings.baseUrl);
+  }
+
+  return 'Ve a Configuración y guarda la clave del proveedor para poder usarlo.';
 }
 
 /**
@@ -167,5 +225,9 @@ export async function isAnalysisAvailable(organizationId: string): Promise<boole
     .limit(1);
 
   if (!row?.isEnabled) return false;
-  return row.provider === 'ollama' ? Boolean(row.baseUrl) : Boolean(row.hasKey);
+
+  if (willUseCloudFallback(row.provider, row.baseUrl)) return true;
+  if (!canRunHere(row.provider, row.baseUrl)) return false;
+
+  return row.provider === 'ollama' || Boolean(row.hasKey);
 }

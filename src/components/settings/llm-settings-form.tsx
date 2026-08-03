@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { CheckCircle2, Loader2, Plug, XCircle } from 'lucide-react';
+import { CheckCircle2, CloudCog, Laptop, Loader2, Plug, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { isLocallyBoundUrl } from '@/lib/llm-url';
 import {
   CUSTOM_INSTRUCTIONS_MAX,
   llmSettingsSchema,
@@ -25,8 +26,8 @@ import { tiempoRelativo } from '@/lib/utils';
 
 const PROVIDERS = [
   { key: 'anthropic', label: 'Anthropic Claude', defaultUrl: 'https://api.anthropic.com' },
-  { key: 'openai', label: 'OpenAI', defaultUrl: 'https://api.openai.com' },
-  { key: 'ollama', label: 'Ollama (remoto)', defaultUrl: '' },
+  { key: 'openai', label: 'OpenAI (o API compatible)', defaultUrl: 'https://api.openai.com' },
+  { key: 'ollama', label: 'Ollama (local o remoto)', defaultUrl: '' },
 ] as const;
 
 const SUGGESTED: Record<string, string[]> = {
@@ -34,6 +35,47 @@ const SUGGESTED: Record<string, string[]> = {
   openai: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'],
   ollama: ['llama3.1', 'qwen2.5', 'mistral'],
 };
+
+/**
+ * Qué hará el servidor con esta configuración en el entorno donde corre ahora.
+ * La decisión real vive en src/server/llm/runtime.ts; aquí solo se explica, para
+ * que el facilitador no descubra en mitad de una capacitación que su Ollama de
+ * escritorio no existe en Netlify.
+ */
+function runtimeNotice(
+  runtime: LlmSettingsDto['runtime'],
+  provider: string,
+  baseUrl: string,
+): { tone: 'accent' | 'destructive'; local: boolean; text: string } | null {
+  const url = baseUrl.trim();
+  const esLocal = runtime.environment === 'local';
+
+  if (provider === 'ollama' && esLocal && !url) {
+    return {
+      tone: 'accent',
+      local: true,
+      text: `Entorno de desarrollo: se usará el Ollama de esta máquina en ${runtime.localOllamaBaseUrl}. Deja la URL vacía para mantener este comportamiento; en producción hará falta una URL pública o un respaldo en la nube.`,
+    };
+  }
+
+  // En la nube, una dirección local (o ninguna, con Ollama) es inalcanzable.
+  const inalcanzable =
+    !esLocal && (isLocallyBoundUrl(url) || (provider === 'ollama' && !url));
+
+  if (!inalcanzable) return null;
+
+  return runtime.fallback
+    ? {
+        tone: 'accent',
+        local: false,
+        text: `Este servidor no puede alcanzar direcciones locales, así que los análisis se atenderán con el proveedor de respaldo del despliegue: ${runtime.fallback.label}.`,
+      }
+    : {
+        tone: 'destructive',
+        local: false,
+        text: 'Este servidor no puede alcanzar direcciones locales y no hay proveedor de respaldo configurado: el análisis quedará deshabilitado. Publica Ollama en una URL accesible desde internet o define las variables LLM_FALLBACK_* en el despliegue.',
+      };
+}
 
 export function LlmSettingsForm({ settings }: { settings: LlmSettingsDto }) {
   const [testing, setTesting] = useState(false);
@@ -61,6 +103,8 @@ export function LlmSettingsForm({ settings }: { settings: LlmSettingsDto }) {
   });
 
   const provider = watch('provider');
+  const baseUrl = watch('baseUrl') ?? '';
+  const notice = runtimeNotice(settings.runtime, provider, baseUrl);
 
   async function onSubmit(values: LlmSettingsInput) {
     const result = await saveLlmSettingsAction(values);
@@ -124,20 +168,37 @@ export function LlmSettingsForm({ settings }: { settings: LlmSettingsDto }) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="baseUrl">
-              URL base {provider === 'ollama' && <span className="text-destructive">*</span>}
-            </Label>
+            <Label htmlFor="baseUrl">URL base</Label>
             <Input
               id="baseUrl"
-              placeholder={provider === 'ollama' ? 'https://mi-servidor-ollama.ejemplo' : ''}
+              placeholder={
+                provider === 'ollama'
+                  ? `${settings.runtime.localOllamaBaseUrl} (vacío = Ollama de esta máquina)`
+                  : ''
+              }
               aria-invalid={Boolean(errors.baseUrl)}
               {...register('baseUrl')}
             />
             {errors.baseUrl && <p className="text-destructive text-sm">{errors.baseUrl.message}</p>}
             <p className="text-muted-foreground text-xs">
-              Nunca se asume un host: Ollama requiere una URL alcanzable desde el servidor.
+              {provider === 'ollama'
+                ? 'Déjala vacía para usar el Ollama local en desarrollo, o indica una URL pública para que también funcione en producción.'
+                : 'Opcional: solo si usas un proxy o una API compatible distinta de la oficial.'}
             </p>
           </div>
+
+          {notice && (
+            <Alert variant={notice.tone}>
+              <AlertDescription className="flex items-start gap-2">
+                {notice.local ? (
+                  <Laptop className="mt-0.5 size-4 shrink-0" />
+                ) : (
+                  <CloudCog className="mt-0.5 size-4 shrink-0" />
+                )}
+                <span>{notice.text}</span>
+              </AlertDescription>
+            </Alert>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="apiKey">Clave API</Label>

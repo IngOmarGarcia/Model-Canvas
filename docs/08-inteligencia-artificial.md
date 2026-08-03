@@ -33,10 +33,54 @@ fila `llm_settings` (proveedor, modelo, `base_url`, clave descifrada, `max_outpu
 | --------- | -------- | ------------- | ----- |
 | Anthropic | `POST {baseUrl}/v1/messages` | cabecera `x-api-key` + `anthropic-version` | Predeterminado. Modelos sugeridos: `claude-sonnet-5` (equilibrio) o `claude-opus-5`. |
 | OpenAI | `POST {baseUrl}/v1/chat/completions` | `Authorization: Bearer` | `response_format` JSON cuando el modelo lo admite. |
-| Ollama (remoto) | `POST {baseUrl}/api/chat` | opcional (`Authorization` si hay proxy) | `baseUrl` obligatoria; sin clave en instalaciones abiertas. `format: "json"`. |
+| Ollama (local o remoto) | `POST {baseUrl}/api/chat` | opcional (`Authorization` si hay proxy u Ollama Cloud) | `baseUrl` vacía = la resuelve el entorno (ver abajo). Sin clave en instalaciones abiertas. `format: "json"`. |
 
-`baseUrl` siempre proviene de la configuración o de variables de entorno; nunca está codificada, y
-no se asume `localhost` ni siquiera para Ollama.
+`baseUrl` siempre proviene de la configuración o de variables de entorno; nunca está codificada.
+
+## Resolución por entorno (Ollama local vs. Netlify)
+
+La configuración vive en Neon y es **la misma** en desarrollo y en producción, pero un
+`http://localhost:11434` solo existe en la máquina del desarrollador: dentro de una función de
+Netlify apunta al propio contenedor, donde no hay ningún modelo. La diferencia, por tanto, no puede
+estar en la base de datos y se decide en tiempo de ejecución, en `src/server/llm/runtime.ts`.
+
+`resolveLlmRuntime()` recibe la configuración leída de Neon y devuelve la que de verdad se puede
+usar aquí. **No modifica nunca la fila**: el facilitador sigue viendo en Configuración lo que él
+guardó.
+
+| Entorno | `base_url` guardada | Resultado (`source`) |
+| ------- | ------------------- | -------------------- |
+| local | vacía (Ollama) | `local-ollama`: `OLLAMA_BASE_URL` → `OLLAMA_HOST` → `http://localhost:11434` |
+| local | cualquiera | `configured` |
+| producción | pública | `configured` |
+| producción | local/privada, o vacía con Ollama | `cloud-fallback` si hay `LLM_FALLBACK_*`; si no, error 409 con un mensaje que explica que Ollama solo funciona en desarrollo |
+
+Se consideran inalcanzables desde producción `localhost`, `127.0.0.0/8`, `::1`, `0.0.0.0`,
+`10/8`, `192.168/16`, `172.16–31/12`, `host.docker.internal` y los sufijos `.local` e `.internal`.
+
+**Detección del entorno** (`getRuntimeEnvironment()`): `LLM_RUNTIME_ENV` (`local` | `hosted`) manda
+sobre todo; `NETLIFY_DEV` es *local* aunque defina `NETLIFY`, porque `netlify dev` corre en la
+máquina del desarrollador; `NETLIFY`, `AWS_LAMBDA_FUNCTION_NAME` o `VERCEL` son *hosted*; en último
+término decide `NODE_ENV`.
+
+**Respaldo en la nube.** Se define solo por variables de entorno del despliegue, nunca por la base
+de datos: es una característica del alojamiento, no de la organización.
+
+| Variable | Uso |
+| -------- | --- |
+| `LLM_FALLBACK_PROVIDER` | `openai` (por defecto), `anthropic` u `ollama` |
+| `LLM_FALLBACK_BASE_URL` | URL del proveedor compatible (Groq, OpenRouter, Together, Ollama Cloud…) |
+| `LLM_FALLBACK_MODEL` | Obligatoria: sin modelo no hay respaldo |
+| `LLM_FALLBACK_API_KEY` | Obligatoria salvo con `ollama` detrás de un proxy abierto |
+| `LLM_FALLBACK_LABEL` | Texto para la interfaz; por defecto `modelo (host)` |
+
+El respaldo se ignora si está incompleto o si apunta a una dirección local, y **solo** entra en
+juego cuando la configuración de la organización es inalcanzable: un Anthropic u OpenAI bien
+configurados nunca se desvían. `max_output_tokens` sigue siendo el de la organización, y las filas
+de `canvas_analyses` registran el proveedor y el modelo que de verdad respondieron.
+
+Sin respaldo definido no hay error de red: `isAnalysisAvailable()` devuelve `false`, el participante
+ve el panel de "no disponible" y el facilitador recibe en Configuración el motivo exacto.
 
 ## Manejo de claves
 
